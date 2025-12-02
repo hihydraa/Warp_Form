@@ -2,8 +2,16 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <title>ส่งรูปขึ้นจอร้านอาหาร</title>
+  <title>แจกวาร์ป ขึ้นจอ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Cropper.js (ใช้สำหรับครอปรูป) -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css"
+  />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
   <style>
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -84,11 +92,68 @@
     .status.success {
       color: #6ee7b7;
     }
+
+    /* พื้นที่ preview / crop รูปขึ้นจอ */
+    .crop-container {
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 12px;
+      border: 1px dashed #4b5563;
+      background: #020617;
+    }
+    .crop-box {
+      width: 100%;
+      aspect-ratio: 4 / 5;   /* สัดส่วนเดียวกับ Warp Screen (1080x1350) */
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #warpPreview {
+      max-width: 100%;
+      display: none;
+    }
+    .crop-hint {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    /* บล็อก QR สำหรับโอนเงิน */
+    .qr-pay {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #020617;
+      border: 1px solid #374151;
+      text-align: center;
+    }
+    .qr-pay-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+    .qr-pay-img {
+      width: 170px;
+      max-width: 70%;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px;
+      box-shadow: 0 0 18px rgba(0,0,0,0.6);
+    }
+    .qr-pay-caption {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      color: #fbbf24;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>ส่งรูปขึ้นจอร้านอาหาร</h1>
+    <h1>แจกวาร์ป ขึ้นจอ</h1>
 
     <form id="warp-form">
       <label for="ig">IG / ชื่อเล่น</label>
@@ -97,13 +162,34 @@
       <label for="message">ข้อความที่จะโชว์บนจอ</label>
       <textarea id="message" placeholder="พิมพ์ข้อความอวยพร" required></textarea>
 
+      <!-- บล็อก QR ชำระเงิน -->
+      <div class="qr-pay">
+        <div class="qr-pay-title">สแกน QR นี้เพื่อโอนเงิน</div>
+        <img
+          class="qr-pay-img"
+          src="https://hihydraa.github.io/Warp_Form/qrcode_recieve.png"
+          alt="QR สำหรับโอนเงิน"
+        />
+        <div class="qr-pay-caption">20 บาท 30 วินาที พร้อมรีรันทั้งคืน</div>
+      </div>
+
       <label for="warpImage">รูปภาพที่จะโชว์บนจอ</label>
       <input type="file" id="warpImage" accept="image/*" required />
       <div class="hint">เลือก 1 รูป (ไฟล์ภาพ)</div>
 
+      <!-- กล่อง Preview / Crop -->
+      <div class="crop-container">
+        <div class="crop-box">
+          <img id="warpPreview" alt="ตัวอย่างรูปบนจอ" />
+        </div>
+        <div class="crop-hint">
+          เลื่อน/ซูมรูปให้พอดีกับกรอบ (สัดส่วนเดียวกับหน้าจอ) ก่อนกดส่ง
+        </div>
+      </div>
+
       <label for="slipImage">สลิปโอนเงิน</label>
       <input type="file" id="slipImage" accept="image/*" required />
-      <div class="hint">ถ่ายรูปสลิปแล้วอัปโหลด</div>
+      <div class="hint">อัปโหลดรูปสลิปหลังโอนเงินเรียบร้อย</div>
 
       <button type="submit">ส่งข้อมูล</button>
     </form>
@@ -112,22 +198,58 @@
   </div>
 
   <script>
-    // ======= 1) ใส่ค่าที่นี่ให้ถูก =======
-    // ใส่ API key ตัวล่าสุดจากหน้า ImgBB
-    const IMGBB_API_KEY   = 'db23dbb367bb9291c84cb6d3d0208075';
-    // ใส่ URL Web App จาก Apps Script (ตัวเดียวกับที่ใช้บน Warp Screen)
+    // ======= 1) CONFIG =======
+    const IMGBB_API_KEY   = 'db23dbb367bb9291c84cb6d3d0208075'; // ImgBB API key
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyPe0m5QIrapr1sThYjwTHRASCXhrOf9qTMcRwKrNyPfCCdYvOjT7xS5drG7840O6-ztg/exec';
 
-    const formEl   = document.getElementById('warp-form');
-    const statusEl = document.getElementById('status');
+    const formEl        = document.getElementById('warp-form');
+    const statusEl      = document.getElementById('status');
+    const warpInputEl   = document.getElementById('warpImage');
+    const warpPreviewEl = document.getElementById('warpPreview');
 
-    async function uploadToImgbb(file, label) {
-      if (!file) {
+    let warpCropper = null; // ตัว cropper สำหรับรูปขึ้นจอ
+
+    function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.9) {
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), type, quality);
+      });
+    }
+
+    // เมื่อเลือกไฟล์รูปขึ้นจอ → แสดง preview + สร้าง Cropper
+    warpInputEl.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        warpPreviewEl.src = ev.target.result;
+        warpPreviewEl.style.display = 'block';
+
+        if (warpCropper) {
+          warpCropper.destroy();
+          warpCropper = null;
+        }
+
+        warpCropper = new Cropper(warpPreviewEl, {
+          aspectRatio: 4 / 5,
+          viewMode: 1,
+          dragMode: 'move',
+          autoCropArea: 1,
+          background: false,
+          responsive: true,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // อัปโหลดไฟล์/Blob ไป ImgBB
+    async function uploadToImgbb(fileOrBlob, label) {
+      if (!fileOrBlob) {
         throw new Error(`ไม่พบไฟล์สำหรับ ${label}`);
       }
 
       const fd = new FormData();
-      fd.append('image', file);
+      fd.append('image', fileOrBlob);
 
       const url = `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`;
 
@@ -162,29 +284,28 @@
       return json.data.url;
     }
 
-   async function sendToAppsScript(payload) {
-
+    // ส่งข้อมูลเข้า Apps Script → Google Sheet
+    async function sendToAppsScript(payload) {
       const fd = new FormData();
       fd.append('ig', payload.ig);
       fd.append('message', payload.message);
       fd.append('warpImageUrl', payload.warpImageUrl);
       fd.append('slipImageUrl', payload.slipImageUrl);
-    
+
       try {
         const res = await fetch(APPS_SCRIPT_URL, {
           method: 'POST',
-          body: fd   // ⭐ ส่งแบบ FormData (Apps Script รองรับ 100%)
+          body: fd
         });
-    
-        console.log("Apps Script response:", res);
+        console.log('Apps Script response:', res);
         return true;
-    
       } catch (e) {
-        console.error("fetch error:", e);
-        throw new Error("ติดต่อ Google Apps Script ไม่ได้");
+        console.error('fetch error:', e);
+        throw new Error('ติดต่อ Google Apps Script ไม่ได้');
       }
     }
 
+    // handle submit
     formEl.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -196,22 +317,40 @@
       try {
         const ig       = document.getElementById('ig').value.trim();
         const message  = document.getElementById('message').value.trim();
-        const warpFile = document.getElementById('warpImage').files[0];
         const slipFile = document.getElementById('slipImage').files[0];
 
-        // 1) อัปโหลดรูปทั้งสองไป ImgBB
-        const warpImageUrl = await uploadToImgbb(warpFile, 'รูปบนจอ');
+        if (!warpCropper) {
+          throw new Error('กรุณาเลือกรูปสำหรับขึ้นจอ และรอให้ preview แสดงก่อน');
+        }
+
+        // 1) ครอปรูปขึ้นจอให้เป็น 1080x1350 แล้วอัปโหลด
+        const canvas = warpCropper.getCroppedCanvas({
+          width: 1080,
+          height: 1350
+        });
+        const warpBlob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+        const warpImageUrl = await uploadToImgbb(warpBlob, 'รูปบนจอ');
+
+        // 2) อัปโหลดสลิปตามปกติ
         const slipImageUrl = await uploadToImgbb(slipFile, 'สลิปโอนเงิน');
 
         statusEl.textContent = 'อัปโหลดรูปสำเร็จ กำลังบันทึกข้อมูล...';
 
-        // 2) ส่งข้อมูลเข้า Apps Script → Google Sheet
+        // 3) ส่งข้อมูลเข้า Apps Script
         const payload = { ig, message, warpImageUrl, slipImageUrl };
         await sendToAppsScript(payload);
 
         statusEl.textContent = 'ส่งข้อมูลสำเร็จ ขอบคุณที่ร่วมสนุก 🎉';
         statusEl.className = 'status success';
         formEl.reset();
+
+        if (warpCropper) {
+          warpCropper.destroy();
+          warpCropper = null;
+        }
+        warpPreviewEl.src = '';
+        warpPreviewEl.style.display = 'none';
+
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'เกิดข้อผิดพลาด: ' + err.message;
