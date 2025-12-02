@@ -112,72 +112,100 @@
   </div>
 
   <script>
-    // ======= ตั้งค่า =======
-    const IMGBB_API_KEY = 'db23dbb367bb9291c84cb6d3d0208075';
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz8kRGfE7H9rISd3Pswb8NSlG-4DxHscs7uqFtaD9v65kdG_l18soDwveUu4sMmzok8KQ/exec'; // <--- แก้ตรงนี้
+    // ======= 1) ใส่ค่าที่นี่ให้ถูก =======
+    // ใส่ API key ตัวล่าสุดจากหน้า ImgBB
+    const IMGBB_API_KEY   = 'db23dbb367bb9291c84cb6d3d0208075';
+    // ใส่ URL Web App จาก Apps Script (ตัวเดียวกับที่ใช้บน Warp Screen)
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz8kRGfE7H9rISd3Pswb8NSlG-4DxHscs7uqFtaD9v65kdG_l18soDwveUu4sMmzok8KQ/exec';
 
-    const formEl = document.getElementById('warp-form');
+    const formEl   = document.getElementById('warp-form');
     const statusEl = document.getElementById('status');
 
-    async function uploadToImgbb(file) {
-    const fd = new FormData();
-    // ใส่ key ลงไปใน form-data ตรง ๆ
-    fd.append('key', IMGBB_API_KEY);
-    fd.append('image', file);
-  
-    const url = 'https://api.imgbb.com/1/upload';
-  
-    const res = await fetch(url, {
-      method: 'POST',
-      body: fd
-    });
-  
-    const json = await res.json();
-    console.log('ImgBB response:', json); // ไว้ดูใน Console ถ้ามี error
-  
-    if (!json.success) {
-      // ดึงข้อความ error จริงออกมา ถ้ามี
-      const msg = (json.error && json.error.message) ? json.error.message : 'อัปโหลดรูปไป ImgBB ไม่สำเร็จ';
-      throw new Error(msg);
+    async function uploadToImgbb(file, label) {
+      if (!file) {
+        throw new Error(`ไม่พบไฟล์สำหรับ ${label}`);
+      }
+
+      const fd = new FormData();
+      fd.append('image', file);
+
+      const url = `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`;
+
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          body: fd
+        });
+      } catch (e) {
+        console.error('fetch to ImgBB failed:', e);
+        throw new Error(`ติดต่อ ImgBB ไม่ได้ (${label})`);
+      }
+
+      let json;
+      try {
+        json = await res.json();
+      } catch (e) {
+        console.error('cannot parse ImgBB response:', e);
+        throw new Error(`อ่านผลลัพธ์จาก ImgBB ไม่ได้ (${label})`);
+      }
+
+      console.log('ImgBB response', label, json);
+
+      if (!json.success) {
+        const msg = (json.error && json.error.message)
+          ? json.error.message
+          : 'อัปโหลดรูปไป ImgBB ไม่สำเร็จ';
+        throw new Error(`${msg} (${label})`);
+      }
+
+      return json.data.url;
     }
-  
-    // ลิงก์รูปภาพที่พร้อมใช้
-    return json.data.url;
-  }
 
     async function sendToAppsScript(payload) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      // ส่ง JSON เข้า Apps Script
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        console.log('Apps Script status:', res.status);
+      } catch (e) {
+        console.error('fetch to Apps Script failed:', e);
+        throw new Error('ติดต่อ Google Apps Script ไม่ได้');
+      }
     }
 
     formEl.addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      const btn = formEl.querySelector('button[type="submit"]');
+      btn.disabled = true;
       statusEl.textContent = 'กำลังอัปโหลดรูป...';
       statusEl.className = 'status';
 
-      const btn = formEl.querySelector('button');
-      btn.disabled = true;
-
       try {
-        const ig = document.getElementById('ig').value.trim();
-        const message = document.getElementById('message').value.trim();
+        const ig       = document.getElementById('ig').value.trim();
+        const message  = document.getElementById('message').value.trim();
         const warpFile = document.getElementById('warpImage').files[0];
         const slipFile = document.getElementById('slipImage').files[0];
 
-        // Upload รูปไป ImgBB
-        const warpImageUrl = await uploadToImgbb(warpFile);
-        const slipImageUrl = await uploadToImgbb(slipFile);
+        // 1) อัปโหลดรูปทั้งสองไป ImgBB
+        const warpImageUrl = await uploadToImgbb(warpFile, 'รูปบนจอ');
+        const slipImageUrl = await uploadToImgbb(slipFile, 'สลิปโอนเงิน');
 
-        // ส่งข้อมูลเข้าชีต
-        await sendToAppsScript({ ig, message, warpImageUrl, slipImageUrl });
+        statusEl.textContent = 'อัปโหลดรูปสำเร็จ กำลังบันทึกข้อมูล...';
 
-        statusEl.textContent = 'ส่งข้อมูลสำเร็จ 🎉';
+        // 2) ส่งข้อมูลเข้า Apps Script → Google Sheet
+        const payload = { ig, message, warpImageUrl, slipImageUrl };
+        await sendToAppsScript(payload);
+
+        statusEl.textContent = 'ส่งข้อมูลสำเร็จ ขอบคุณที่ร่วมสนุก 🎉';
         statusEl.className = 'status success';
         formEl.reset();
       } catch (err) {
+        console.error(err);
         statusEl.textContent = 'เกิดข้อผิดพลาด: ' + err.message;
         statusEl.className = 'status error';
       } finally {
