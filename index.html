@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>ส่งรูปขึ้นจอร้านอาหาร</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #f9fafb;
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: #1f2933;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    h1 {
+      font-size: 1.3rem;
+      margin-top: 0;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: #f9fafb;
+      font-size: 0.95rem;
+    }
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    input[type="file"] {
+      margin-top: 4px;
+      color: #f9fafb;
+    }
+    .hint {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+    button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: none;
+      background: linear-gradient(135deg, #ec4899, #f97316);
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    .status.error {
+      color: #fca5a5;
+    }
+    .status.success {
+      color: #6ee7b7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ส่งรูปขึ้นจอร้านอาหาร</h1>
+
+    <form id="warp-form">
+      <label for="ig">IG / ชื่อเล่น</label>
+      <input type="text" id="ig" placeholder="@your_ig หรือชื่อเล่น" required />
+
+      <label for="message">ข้อความที่จะโชว์บนจอ</label>
+      <textarea id="message" placeholder="พิมพ์ข้อความอวยพร" required></textarea>
+
+      <label for="warpImage">รูปภาพที่จะโชว์บนจอ</label>
+      <input type="file" id="warpImage" accept="image/*" required />
+      <div class="hint">เลือก 1 รูป (ไฟล์ภาพ)</div>
+
+      <label for="slipImage">สลิปโอนเงิน</label>
+      <input type="file" id="slipImage" accept="image/*" required />
+      <div class="hint">ถ่ายรูปสลิปแล้วอัปโหลด</div>
+
+      <button type="submit">ส่งข้อมูล</button>
+    </form>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    // ======= ตั้งค่า =======
+    const IMGBB_API_KEY = 'c9f0623223ff48948295469f4fb8d4f4';
+    const APPS_SCRIPT_URL = 'PUT_YOUR_APPS_SCRIPT_URL_HERE'; // <--- แก้ตรงนี้
+
+    const formEl = document.getElementById('warp-form');
+    const statusEl = document.getElementById('status');
+
+    async function uploadToImgbb(file) {
+      const fd = new FormData();
+      fd.append('image', file);
+
+      const url = `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`;
+
+      const res = await fetch(url, { method: 'POST', body: fd });
+      const json = await res.json();
+
+      if (!json.success) throw new Error('อัปโหลดรูปไป ImgBB ไม่สำเร็จ');
+
+      return json.data.url;
+    }
+
+    async function sendToAppsScript(payload) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    formEl.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      statusEl.textContent = 'กำลังอัปโหลดรูป...';
+      statusEl.className = 'status';
+
+      const btn = formEl.querySelector('button');
+      btn.disabled = true;
+
+      try {
+        const ig = document.getElementById('ig').value.trim();
+        const message = document.getElementById('message').value.trim();
+        const warpFile = document.getElementById('warpImage').files[0];
+        const slipFile = document.getElementById('slipImage').files[0];
+
+        // Upload รูปไป ImgBB
+        const warpImageUrl = await uploadToImgbb(warpFile);
+        const slipImageUrl = await uploadToImgbb(slipFile);
+
+        // ส่งข้อมูลเข้าชีต
+        await sendToAppsScript({ ig, message, warpImageUrl, slipImageUrl });
+
+        statusEl.textContent = 'ส่งข้อมูลสำเร็จ 🎉';
+        statusEl.className = 'status success';
+        formEl.reset();
+      } catch (err) {
+        statusEl.textContent = 'เกิดข้อผิดพลาด: ' + err.message;
+        statusEl.className = 'status error';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
