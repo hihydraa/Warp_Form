@@ -163,14 +163,20 @@
     }
 
     async function sendToAppsScript(payload) {
-      // ส่ง JSON เข้า Apps Script
+      // payload = { ig, message, warpImageUrl, slipImageUrl }
+    
+      const params = new URLSearchParams();
+      params.append('ig',           payload.ig);
+      params.append('message',      payload.message);
+      params.append('warpImageUrl', payload.warpImageUrl);
+      params.append('slipImageUrl', payload.slipImageUrl);
+    
       try {
         const res = await fetch(APPS_SCRIPT_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: params   // เบราว์เซอร์จะตั้ง Content-Type ให้เองเป็น x-www-form-urlencoded
         });
-        console.log('Apps Script status:', res.status);
+        console.log('Apps Script response (should be OK/opaque):', res);
       } catch (e) {
         console.error('fetch to Apps Script failed:', e);
         throw new Error('ติดต่อ Google Apps Script ไม่ได้');
